@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="description" content="Queens Puzzel - Een logische puzzel geïnspireerd door LinkedIn's Queens game">
+    <title>👑 Queens Puzzel</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #252542;
+            --text-primary: #f0f0f0;
+            --text-secondary: #a0a0b0;
+            --accent-gold: #ffd700;
+            --accent-gold-glow: rgba(255, 215, 0, 0.3);
+            --success: #4ade80;
+            --error: #f87171;
+            --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.3);
+            --shadow-glow: 0 0 30px var(--accent-gold-glow);
+        }
+        
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            min-height: 100dvh;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(ellipse at 20% 20%, rgba(255, 215, 0, 0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(100, 100, 255, 0.05) 0%, transparent 50%);
+        }
+        
+        #root {
+            min-height: 100vh;
+            min-height: 100dvh;
+        }
+        
+        @keyframes confetti-fall {
+            0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+        
+        @keyframes queen-place {
+            0% { transform: scale(0.5); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1.05); }
+        }
+        
+        @keyframes crown-bounce {
+            0% { transform: translateY(-10px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        @keyframes pop-in {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .btn {
+            font-family: inherit;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+        
+        .btn:active {
+            transform: scale(0.98);
+        }
+        
+        .cell-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+        
+        .cell-btn.has-queen {
+            transform: scale(1.05);
+            animation: queen-place 0.3s ease;
+        }
+        
+        .cell-btn.error {
+            box-shadow: inset 0 0 0 3px #ef4444, 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+        
+        .cell-btn.hint {
+            box-shadow: inset 0 0 0 3px var(--accent-gold), 0 0 15px var(--accent-gold-glow);
+        }
+        
+        .crown-icon {
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            animation: crown-bounce 0.3s ease;
+        }
+        
+        .level-btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-tertiary);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 16px;
+            width: 100%;
+            text-align: left;
+        }
+        
+        .level-btn:hover {
+            background: var(--bg-tertiary);
+            transform: translateX(8px);
+            border-color: var(--accent-gold);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="text/babel" data-presets="react">
+        const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+        // ============================================
+        // CONSTANTS
+        // ============================================
+        
+        const DIFFICULTY_CONFIG = {
+            beginner: { minSize: 4, maxSize: 5, hints: 3, name: 'Beginner', icon: '🌱' },
+            easy: { minSize: 5, maxSize: 6, hints: 2, name: 'Makkelijk', icon: '⭐' },
+            medium: { minSize: 6, maxSize: 7, hints: 1, name: 'Gemiddeld', icon: '⭐⭐' },
+            hard: { minSize: 7, maxSize: 8, hints: 0, name: 'Moeilijk', icon: '⭐⭐⭐' },
+            expert: { minSize: 8, maxSize: 9, hints: 0, name: 'Expert', icon: '👑' },
+            master: { minSize: 9, maxSize: 10, hints: 0, name: 'Meester', icon: '🏆' }
+        };
+
+        const REGION_COLORS = [
+            '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
+            '#1abc9c', '#e91e63', '#00bcd4', '#ff9800', '#8bc34a',
+            '#673ab7', '#ff5722', '#607d8b', '#795548', '#009688'
+        ];
+
+        // ============================================
+        // STORAGE UTILITIES
+        // ============================================
+        
+        const Storage = {
+            get(key, defaultValue) {
+                try {
+                    const item = localStorage.getItem(key);
+                    return item ? JSON.parse(item) : defaultValue;
+                } catch (e) {
+                    console.warn('localStorage not available:', e);
+                    return defaultValue;
+                }
+            },
+            set(key, value) {
+                try {
+                    localStorage.setItem(key, JSON.stringify(value));
+                } catch (e) {
+                    console.warn('localStorage not available:', e);
+                }
+            }
+        };
+
+        // ============================================
+        // PUZZLE GENERATOR & SOLVER
+        // ============================================
+        
+        function generatePuzzle(size) {
+            const solution = generateSolution(size);
+            if (!solution) return null;
+            
+            const regions = generateRegions(size, solution);
+            return { size, solution, regions };
+        }
+
+        function generateSolution(size) {
+            const queens = new Array(size).fill(-1);
+            
+            function isSafe(row, col) {
+                for (let i = 0; i < row; i++) {
+                    if (queens[i] === col) return false;
+                    if (Math.abs(queens[i] - col) === Math.abs(i - row)) return false;
+                }
+                return true;
+            }
+            
+            function solve(row) {
+                if (row === size) return true;
+                
+                const cols = shuffleArray([...Array(size).keys()]);
+                for (const col of cols) {
+                    if (isSafe(row, col)) {
+                        queens[row] = col;
+                        if (solve(row + 1)) return true;
+                        queens[row] = -1;
+                    }
+                }
+                return false;
+            }
+            
+            if (solve(0)) {
+                return queens.map((col, row) => ({ row, col }));
+            }
+            return null;
+        }
+
+        function generateRegions(size, solution) {
+            const regions = Array(size).fill(null).map(() => Array(size).fill(-1));
+            const queenPositions = solution.map((q, i) => ({ ...q, region: i }));
+            
+            queenPositions.forEach((q, i) => {
+                regions[q.row][q.col] = i;
+            });
+            
+            const cellsToFill = [];
+            for (let r = 0; r < size; r++) {
+                for (let c = 0; c < size; c++) {
+                    if (regions[r][c] === -1) {
+                        cellsToFill.push({ r, c });
+                    }
+                }
+            }
+            
+            shuffleArray(cellsToFill);
+            
+            for (const { r, c } of cellsToFill) {
+                if (regions[r][c] !== -1) continue;
+                
+                const neighbors = getNeighbors(r, c, size)
+                    .filter(n => regions[n.r][n.c] !== -1)
+                    .map(n => regions[n.r][n.c]);
+                
+                if (neighbors.length > 0) {
+                    regions[r][c] = neighbors[Math.floor(Math.random() * neighbors.length)];
+                }
+            }
+            
+            let changed = true;
+            while (changed) {
+                changed = false;
+                for (let r = 0; r < size; r++) {
+                    for (let c = 0; c < size; c++) {
+                        if (regions[r][c] === -1) {
+                            const neighbors = getNeighbors(r, c, size)
+                                .filter(n => regions[n.r][n.c] !== -1);
+                            if (neighbors.length > 0) {
+                                regions[r][c] = regions[neighbors[0].r][neighbors[0].c];
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return regions;
+        }
+
+        function getNeighbors(r, c, size) {
+            const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+            return dirs
+                .map(([dr, dc]) => ({ r: r + dr, c: c + dc }))
+                .filter(({ r, c }) => r >= 0 && r < size && c >= 0 && c < size);
+        }
+
+        function shuffleArray(arr) {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        // ============================================
+        // VALIDATION
+        // ============================================
+        
+        function validateBoard(board, regions, size) {
+            const errors = [];
+            const queens = [];
+            
+            for (let r = 0; r < size; r++) {
+                for (let c = 0; c < size; c++) {
+                    if (board[r][c] === 'queen') {
+                        queens.push({ r, c, region: regions[r][c] });
+                    }
+                }
+            }
+            
+            for (let i = 0; i < queens.length; i++) {
+                const q1 = queens[i];
+                
+                for (let j = i + 1; j < queens.length; j++) {
+                    const q2 = queens[j];
+                    
+                    if (q1.r === q2.r) {
+                        errors.push({ type: 'row', cells: [q1, q2] });
+                    }
+                    
+                    if (q1.c === q2.c) {
+                        errors.push({ type: 'col', cells: [q1, q2] });
+                    }
+                    
+                    if (Math.abs(q1.r - q2.r) <= 1 && Math.abs(q1.c - q2.c) <= 1) {
+                        errors.push({ type: 'adjacent', cells: [q1, q2] });
+                    }
+                    
+                    if (q1.region === q2.region) {
+                        errors.push({ type: 'region', cells: [q1, q2] });
+                    }
+                }
+            }
+            
+            return { errors, queenCount: queens.length };
+        }
+
+        function isComplete(board, regions, size) {
+            const { errors, queenCount } = validateBoard(board, regions, size);
+            return errors.length === 0 && queenCount === size;
+        }
+
+        // ============================================
+        // CUSTOM HOOKS
+        // ============================================
+        
+        function useWindowSize() {
+            const [size, setSize] = useState(() => ({
+                width: typeof window !== 'undefined' ? window.innerWidth : 500
+            }));
+            
+            useEffect(() => {
+                const handleResize = () => {
+                    setSize({ width: window.innerWidth });
+                };
+                
+                window.addEventListener('resize', handleResize);
+                return () => window.removeEventListener('resize', handleResize);
+            }, []);
+            
+            return size;
+        }
+
+        // ============================================
+        // COMPONENTS
+        // ============================================
+        
+        function Confetti({ show }) {
+            const particlesRef = useRef(null);
+            
+            if (show && !particlesRef.current) {
+                particlesRef.current = Array(50).fill(null).map((_, i) => ({
+                    id: i,
+                    x: Math.random() * 100,
+                    delay: Math.random() * 0.5,
+                    duration: 2 + Math.random() * 2,
+                    color: ['#ffd700', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7'][Math.floor(Math.random() * 6)],
+                    isRound: Math.random() > 0.5
+                }));
+            }
+            
+            useEffect(() => {
+                if (!show) {
+                    particlesRef.current = null;
+                }
+            }, [show]);
+            
+            if (!show || !particlesRef.current) return null;
+            
+            return (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: 'none',
+                    zIndex: 1000,
+                    overflow: 'hidden'
+                }}>
+                    {particlesRef.current.map(p => (
+                        <div key={p.id} style={{
+                            position: 'absolute',
+                            left: `${p.x}%`,
+                            top: '-20px',
+                            width: '10px',
+                            height: '10px',
+                            background: p.color,
+                            borderRadius: p.isRound ? '50%' : '2px',
+                            animation: `confetti-fall ${p.duration}s ease-out ${p.delay}s forwards`
+                        }} />
+                    ))}
+                </div>
+            );
+        }
+
+        const Cell = React.memo(function Cell({ value, color, isError, onClick, cellSize, showHint }) {
+            const className = `cell-btn ${value === 'queen' ? 'has-queen' : ''} ${isError ? 'error' : ''} ${showHint ? 'hint' : ''}`;
+            
+            return (
+                <button
+                    className={className}
+                    onClick={onClick}
+                    style={{
+                        width: cellSize,
+                        height: cellSize,
+                        background: color,
+                        fontSize: cellSize * 0.5,
+                        boxShadow: !isError && !showHint ? 'inset 0 0 0 1px rgba(0,0,0,0.2)' : undefined
+                    }}
+                >
+                    {value === 'queen' && (
+                        <span className="crown-icon">👑</span>
+                    )}
+                    {value === 'marked' && (
+                        <span style={{ 
+                            color: 'rgba(0,0,0,0.5)',
+                            fontWeight: 'bold',
+                            fontSize: cellSize * 0.4
+                        }}>
+                            ✕
+                        </span>
+                    )}
+                </button>
+            );
+        });
+
+        function GameBoard({ puzzle, board, setBoard, errors, hintCell, addToHistory }) {
+            const { width } = useWindowSize();
+            const cellSize = useMemo(() => 
+                Math.min(Math.floor((Math.min(width, 500) - 40) / puzzle.size), 60),
+                [width, puzzle.size]
+            );
+            
+            const handleCellClick = useCallback((r, c) => {
+                setBoard(prevBoard => {
+                    const newBoard = prevBoard.map(row => [...row]);
+                    const current = newBoard[r][c];
+                    
+                    if (current === 'empty') {
+                        newBoard[r][c] = 'marked';
+                    } else if (current === 'marked') {
+                        newBoard[r][c] = 'queen';
+                    } else {
+                        newBoard[r][c] = 'empty';
+                    }
+                    
+                    addToHistory(prevBoard);
+                    
+                    return newBoard;
+                });
+            }, [setBoard, addToHistory]);
+            
+            const errorCells = useMemo(() => {
+                const set = new Set();
+                errors.forEach(e => {
+                    e.cells.forEach(c => set.add(`${c.r}-${c.c}`));
+                });
+                return set;
+            }, [errors]);
+            
+            return (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px',
+                    padding: '12px',
+                    background: 'var(--bg-tertiary)',
+                    borderRadius: '16px',
+                    boxShadow: 'var(--shadow-soft)'
+                }}>
+                    {board.map((row, r) => (
+                        <div key={r} style={{ display: 'flex', gap: '2px' }}>
+                            {row.map((cell, c) => (
+                                <Cell
+                                    key={`${r}-${c}`}
+                                    value={cell}
+                                    color={REGION_COLORS[puzzle.regions[r][c] % REGION_COLORS.length]}
+                                    isError={errorCells.has(`${r}-${c}`)}
+                                    showHint={hintCell && hintCell.r === r && hintCell.c === c}
+                                    onClick={() => handleCellClick(r, c)}
+                                    cellSize={cellSize}
+                                />
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        function Stats({ stats }) {
+            return (
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '12px',
+                    padding: '16px',
+                    background: 'var(--bg-secondary)',
+                    borderRadius: '12px',
+                    marginBottom: '20px'
+                }}>
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--accent-gold)' }}>
+                            {stats.gamesWon}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Gewonnen</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--accent-gold)' }}>
+                            {stats.currentStreak}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Streak</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--accent-gold)' }}>
+                            {stats.bestStreak}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Beste</div>
+                    </div>
+                </div>
+            );
+        }
+
+        function LevelSelect({ onSelect, stats }) {
+            return (
+                <div style={{
+                    padding: '20px',
+                    maxWidth: '500px',
+                    margin: '0 auto',
+                    minHeight: '100vh',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}>
+                    <div style={{ 
+                        textAlign: 'center', 
+                        marginBottom: '30px',
+                        paddingTop: '40px'
+                    }}>
+                        <div style={{ 
+                            fontSize: '64px', 
+                            marginBottom: '16px',
+                            animation: 'float 3s ease-in-out infinite'
+                        }}>
+                            👑
+                        </div>
+                        <h1 style={{ 
+                            fontFamily: "'Playfair Display', serif",
+                            fontSize: '36px',
+                            fontWeight: '700',
+                            marginBottom: '8px',
+                            background: 'linear-gradient(135deg, var(--accent-gold), #fff)',
+                            WebkitBackgroundClip: 'text',
+                            WebkitTextFillColor: 'transparent'
+                        }}>
+                            Queens
+                        </h1>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                            Plaats koninginnen volgens de regels
+                        </p>
+                    </div>
+                    
+                    <Stats stats={stats} />
+                    
+                    <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '12px',
+                        flex: 1
+                    }}>
+                        {Object.entries(DIFFICULTY_CONFIG).map(([key, config]) => (
+                            <button
+                                key={key}
+                                onClick={() => onSelect(key)}
+                                className="btn level-btn"
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <span style={{ fontSize: '24px' }}>{config.icon}</span>
+                                    <div>
+                                        <div style={{ fontWeight: '600' }}>{config.name}</div>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                            {config.minSize}×{config.minSize} - {config.maxSize}×{config.maxSize} raster
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '8px',
+                                    color: 'var(--text-secondary)'
+                                }}>
+                                    {config.hints > 0 && (
+                                        <span style={{ fontSize: '12px' }}>
+                                            {config.hints} hint{config.hints > 1 ? 's' : ''}
+                                        </span>
+                                    )}
+                                    <span>→</span>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <div style={{
+                        marginTop: '30px',
+                        padding: '16px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: '12px',
+                        fontSize: '13px',
+                        color: 'var(--text-secondary)',
+                        lineHeight: '1.6'
+                    }}>
+                        <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                            📜 Regels
+                        </div>
+                        <ul style={{ paddingLeft: '16px', margin: 0 }}>
+                            <li>Elke rij bevat precies 1 koningin</li>
+                            <li>Elke kolom bevat precies 1 koningin</li>
+                            <li>Elk gekleurd gebied bevat precies 1 koningin</li>
+                            <li>Koninginnen raken elkaar niet (ook niet diagonaal)</li>
+                        </ul>
+                    </div>
+                </div>
+            );
+        }
+
+        function GameScreen({ difficulty, onBack, onWin, stats }) {
+            const config = DIFFICULTY_CONFIG[difficulty];
+            
+            const size = useMemo(() => 
+                config.minSize + Math.floor(Math.random() * (config.maxSize - config.minSize + 1)),
+                []
+            );
+            
+            const [puzzle, setPuzzle] = useState(null);
+            const [board, setBoard] = useState(null);
+            const [timer, setTimer] = useState(0);
+            const [hintsLeft, setHintsLeft] = useState(config.hints);
+            const [hintCell, setHintCell] = useState(null);
+            const [showWin, setShowWin] = useState(false);
+            const [history, setHistory] = useState([]);
+            
+            const addToHistory = useCallback((boardState) => {
+                setHistory(prev => [...prev.slice(-19), boardState]);
+            }, []);
+            
+            const undo = useCallback(() => {
+                if (history.length === 0) return;
+                const previousBoard = history[history.length - 1];
+                setBoard(previousBoard);
+                setHistory(prev => prev.slice(0, -1));
+            }, [history]);
+            
+            const winCalledRef = useRef(false);
+            
+            useEffect(() => {
+                const newPuzzle = generatePuzzle(size);
+                setPuzzle(newPuzzle);
+                setBoard(Array(size).fill(null).map(() => Array(size).fill('empty')));
+            }, [size]);
+            
+            useEffect(() => {
+                if (showWin) return;
+                
+                const interval = setInterval(() => {
+                    setTimer(t => t + 1);
+                }, 1000);
+                
+                return () => clearInterval(interval);
+            }, [showWin]);
+            
+            const validation = useMemo(() => {
+                if (!puzzle || !board) return { errors: [], queenCount: 0 };
+                return validateBoard(board, puzzle.regions, puzzle.size);
+            }, [board, puzzle]);
+            
+            useEffect(() => {
+                if (!puzzle || !board || winCalledRef.current) return;
+                
+                if (isComplete(board, puzzle.regions, puzzle.size)) {
+                    winCalledRef.current = true;
+                    setShowWin(true);
+                    onWin(timer);
+                }
+            }, [board, puzzle, timer, onWin]);
+            
+            const useHint = useCallback(() => {
+                if (hintsLeft <= 0 || !puzzle || !board) return;
+                
+                for (const q of puzzle.solution) {
+                    if (board[q.row][q.col] !== 'queen') {
+                        setHintCell({ r: q.row, c: q.col });
+                        setHintsLeft(h => h - 1);
+                        setTimeout(() => setHintCell(null), 3000);
+                        return;
+                    }
+                }
+            }, [hintsLeft, puzzle, board]);
+            
+            const resetBoard = useCallback(() => {
+                if (!puzzle) return;
+                setBoard(Array(puzzle.size).fill(null).map(() => Array(puzzle.size).fill('empty')));
+                setHistory([]);
+            }, [puzzle]);
+            
+            const formatTime = useCallback((seconds) => {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins}:${secs.toString().padStart(2, '0')}`;
+            }, []);
+            
+            if (!puzzle || !board) {
+                return (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '100vh',
+                        fontSize: '24px'
+                    }}>
+                        <div style={{ animation: 'pulse 1s infinite' }}>👑 Laden...</div>
+                    </div>
+                );
+            }
+            
+            return (
+                <div style={{
+                    padding: '16px',
+                    maxWidth: '500px',
+                    margin: '0 auto',
+                    minHeight: '100vh',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}>
+                    <Confetti show={showWin} />
+                    
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '16px'
+                    }}>
+                        <button
+                            onClick={onBack}
+                            className="btn"
+                            style={{
+                                background: 'var(--bg-secondary)',
+                                borderRadius: '10px',
+                                padding: '10px 16px',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px'
+                            }}
+                        >
+                            ← Terug
+                        </button>
+                        
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: 'var(--bg-secondary)',
+                            padding: '8px 16px',
+                            borderRadius: '10px'
+                        }}>
+                            <span>⏱️</span>
+                            <span style={{ fontWeight: '600', fontVariantNumeric: 'tabular-nums' }}>
+                                {formatTime(timer)}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '16px',
+                        padding: '12px 16px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: '12px'
+                    }}>
+                        <div>
+                            <div style={{ fontSize: '14px', fontWeight: '600' }}>
+                                {config.icon} {config.name}
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                {puzzle.size}×{puzzle.size} raster
+                            </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ 
+                                fontSize: '14px', 
+                                fontWeight: '600',
+                                color: validation.queenCount === puzzle.size 
+                                    ? (validation.errors.length === 0 ? 'var(--success)' : 'var(--error)')
+                                    : 'var(--text-primary)'
+                            }}>
+                                👑 {validation.queenCount}/{puzzle.size}
+                            </div>
+                            {validation.errors.length > 0 && (
+                                <div style={{ fontSize: '12px', color: 'var(--error)' }}>
+                                    {validation.errors.length} conflict{validation.errors.length !== 1 ? 'en' : ''}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        marginBottom: '20px'
+                    }}>
+                        <GameBoard
+                            puzzle={puzzle}
+                            board={board}
+                            setBoard={setBoard}
+                            errors={validation.errors}
+                            hintCell={hintCell}
+                            addToHistory={addToHistory}
+                        />
+                    </div>
+                    
+                    <div style={{
+                        display: 'flex',
+                        gap: '12px',
+                        marginBottom: '20px'
+                    }}>
+                        <button
+                            onClick={undo}
+                            disabled={history.length === 0}
+                            className="btn"
+                            style={{
+                                flex: 1,
+                                padding: '14px',
+                                background: history.length > 0 ? 'var(--bg-secondary)' : 'var(--bg-tertiary)',
+                                border: '1px solid var(--bg-tertiary)',
+                                borderRadius: '12px',
+                                color: history.length > 0 ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                fontSize: '14px',
+                                fontWeight: '500',
+                                cursor: history.length > 0 ? 'pointer' : 'not-allowed'
+                            }}
+                        >
+                            ↩️ Undo
+                        </button>
+                        
+                        <button
+                            onClick={resetBoard}
+                            className="btn"
+                            style={{
+                                flex: 1,
+                                padding: '14px',
+                                background: 'var(--bg-secondary)',
+                                border: '1px solid var(--bg-tertiary)',
+                                borderRadius: '12px',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                            }}
+                        >
+                            🔄 Reset
+                        </button>
+                        
+                        {config.hints > 0 && (
+                            <button
+                                onClick={useHint}
+                                disabled={hintsLeft <= 0}
+                                className="btn"
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    background: hintsLeft > 0 
+                                        ? 'linear-gradient(135deg, var(--accent-gold), #ffa500)' 
+                                        : 'var(--bg-tertiary)',
+                                    borderRadius: '12px',
+                                    color: hintsLeft > 0 ? '#000' : 'var(--text-secondary)',
+                                    fontSize: '14px',
+                                    fontWeight: '600',
+                                    cursor: hintsLeft > 0 ? 'pointer' : 'not-allowed'
+                                }}
+                            >
+                                💡 Hint ({hintsLeft})
+                            </button>
+                        )}
+                    </div>
+                    
+                    <div style={{
+                        padding: '12px 16px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        color: 'var(--text-secondary)',
+                        textAlign: 'center'
+                    }}>
+                        Tik: leeg → ✕ → 👑 → leeg
+                    </div>
+                    
+                    {showWin && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0,0,0,0.8)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 100,
+                            padding: '20px'
+                        }}>
+                            <div style={{
+                                background: 'var(--bg-secondary)',
+                                borderRadius: '24px',
+                                padding: '32px',
+                                textAlign: 'center',
+                                maxWidth: '320px',
+                                width: '100%',
+                                animation: 'pop-in 0.4s ease'
+                            }}>
+                                <div style={{ fontSize: '64px', marginBottom: '16px' }}>🎉</div>
+                                <h2 style={{ 
+                                    fontFamily: "'Playfair Display', serif",
+                                    fontSize: '28px',
+                                    marginBottom: '8px',
+                                    color: 'var(--accent-gold)'
+                                }}>
+                                    Gewonnen!
+                                </h2>
+                                <p style={{ 
+                                    color: 'var(--text-secondary)',
+                                    marginBottom: '24px'
+                                }}>
+                                    Tijd: {formatTime(timer)}
+                                </p>
+                                
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '1fr 1fr',
+                                    gap: '12px',
+                                    marginBottom: '24px'
+                                }}>
+                                    <div style={{
+                                        padding: '12px',
+                                        background: 'var(--bg-tertiary)',
+                                        borderRadius: '12px'
+                                    }}>
+                                        <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--accent-gold)' }}>
+                                            {stats.currentStreak + 1}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Streak</div>
+                                    </div>
+                                    <div style={{
+                                        padding: '12px',
+                                        background: 'var(--bg-tertiary)',
+                                        borderRadius: '12px'
+                                    }}>
+                                        <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--accent-gold)' }}>
+                                            {stats.gamesWon + 1}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Totaal</div>
+                                    </div>
+                                </div>
+                                
+                                <button
+                                    onClick={onBack}
+                                    className="btn"
+                                    style={{
+                                        width: '100%',
+                                        padding: '16px',
+                                        background: 'linear-gradient(135deg, var(--accent-gold), #ffa500)',
+                                        borderRadius: '12px',
+                                        color: '#000',
+                                        fontSize: '16px',
+                                        fontWeight: '600'
+                                    }}
+                                >
+                                    Volgende Puzzel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ============================================
+        // MAIN APP
+        // ============================================
+        
+        function App() {
+            const [screen, setScreen] = useState('menu');
+            const [difficulty, setDifficulty] = useState(null);
+            const [stats, setStats] = useState(() => 
+                Storage.get('queens-stats', {
+                    gamesWon: 0,
+                    currentStreak: 0,
+                    bestStreak: 0,
+                    bestTimes: {}
+                })
+            );
+            
+            useEffect(() => {
+                Storage.set('queens-stats', stats);
+            }, [stats]);
+            
+            const handleSelectDifficulty = useCallback((diff) => {
+                setDifficulty(diff);
+                setScreen('game');
+            }, []);
+            
+            const handleWin = useCallback((time) => {
+                setStats(prev => {
+                    const newStreak = prev.currentStreak + 1;
+                    return {
+                        ...prev,
+                        gamesWon: prev.gamesWon + 1,
+                        currentStreak: newStreak,
+                        bestStreak: Math.max(prev.bestStreak, newStreak),
+                        bestTimes: {
+                            ...prev.bestTimes,
+                            [difficulty]: prev.bestTimes[difficulty] 
+                                ? Math.min(prev.bestTimes[difficulty], time)
+                                : time
+                        }
+                    };
+                });
+            }, [difficulty]);
+            
+            const handleBack = useCallback(() => {
+                setScreen('menu');
+                setDifficulty(null);
+            }, []);
+            
+            if (screen === 'game' && difficulty) {
+                return (
+                    <GameScreen
+                        key={`${difficulty}-${Date.now()}`}
+                        difficulty={difficulty}
+                        onBack={handleBack}
+                        onWin={handleWin}
+                        stats={stats}
+                    />
+                );
+            }
+            
+            return <LevelSelect onSelect={handleSelectDifficulty} stats={stats} />;
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
